@@ -1,23 +1,19 @@
 <html>
   <head>
     <script src="./pdf.js"></script>
-		<title>PDF を全部 Gyazo に展開して Scrapbox のページにする</title>
+    <title>pdftoscrapbox</title>
   </head>
   <body>
-    <h1>PDF を全部 Gyazo に展開して Scrapbox のページにする</h1>
-    <input />
+    <input value="in" />
     <div id="drop"></div>
     <span></span>
-    <h3>使い方</h3>
-    <p>
-      <ol>
-        <li><a href='https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo?hl=ja'>Tamper Monkey</a>をインストール</li>
-        <li><a href='https://ssig33.github.io/pdftoscrapbox/pdftoscrapbox.user.js'>user.js</a> をインストール</li>
-				<li>入力欄に scrapbox のプロジェクト名を入れて、赤い四角形に PDF をドラッグ＆ドロップすると中身が展開されて Scrapbox にページが作成されます</li>
-      </ol>
-    </p>
+    <ol>
+      <li>Tamper Monkeyをインストール</li>
+      <li><a href='https://ssig33.github.io/pdftoscrapbox/pdftoscrapbox.user.js'>user.js</a> をインストール</li>
+      <li>PDFをドラッグ＆ドロップ</li>
+    </ol>
     <style>
-      #drop{width:200; height:200; background-color: red }
+      #drop{width:auto; height:200; background-color: red }
     </style>
     <script>
       const input = document.querySelector('input');
