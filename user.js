@@ -125,7 +125,7 @@ const GM_save = (title, text) => {
             window.open(`https://scrapbox.io/${document.querySelector('input').value}/new?body=${encodeURIComponent(urls.join("\n"))}`);
 
             const plainUrls = pages.map(url => `${url}`);
-            GM_save(file.name, PlainUrls);
+            GM_save(file.name, plainUrls);
         });
     });
 })();
