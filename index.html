@@ -6,23 +6,17 @@
   <body>
     <input value="in" />
     <input type="file" id="getfile" accept="application/pdf" />
-    <div id="drop"></div>
     <span class="file"></span>
     <span class="page_per"></span>
+    <br />
+    <span class="debug_log"></span>
+    <br />
+    <span class="error_log"></span>
     <ol>
+      <li><a href="https://github.com/gosyujin/pdftoscrapbox">GitHub - gosyujin/pdftoscrapbox</a></li>
       <li>Tamper Monkeyをインストール</li>
       <li><a href='https://raw.githubusercontent.com/gosyujin/pdftoscrapbox/master/user.js'>user.js</a> をインストール</li>
       <li>ファイルを選択からpdfを選択</li>
     </ol>
-    <style>
-      #drop{width:1px; height:1px; background-color: red }
-    </style>
-    <script>
-      const input = document.querySelector('input');
-      input.addEventListener('change', (e)=>{
-        localStorage.project = e.target.value;
-      });
-      input.value = localStorage.project || '';
-    </script>
   </body>
 </html>
