@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PDF to Scrapbox user.js
 // @namespace    http://tampermonkey.net/
-// @version      10.0.0
-// @description  レンダリング解像度を変更
+// @version      11.0.0
+// @description  /api/upload/を補足するように処理追加
 // @author       You
 // @match        https://note.gosyujin.com/pdftoscrapbox/*
 // @grant        GM_xmlhttpRequest
@@ -26,12 +26,14 @@ const GM_save = (title, text) => {
     GM_download(args);
 }
 
+// index.htmlの要素
 const file = document.querySelector('#getfile');
-const drop = document.querySelector('#drop');
 const filespan = document.querySelector('span.file');
 const page_per = document.querySelector('span.page_per');
+const progress_log = document.querySelector('span.progress_log');
+const error_log = document.querySelector('pre.error_log');
+const preview = document.querySelector('span.preview');
 
-// ファイル選択
 (function() {
     const read = (file) => {
         return new Promise((r)=>{
@@ -43,6 +45,7 @@ const page_per = document.querySelector('span.page_per');
         });
     }
 
+    // レンダリング後、Gyazoにアップロード
     const renderAndUpload = async (page, name)=>{
         // see: https://www.linkcom.com/blog/2020/05/pdfjs-resolution.html
         const PRINT_UNITS = 600 / 72.0;
@@ -62,8 +65,6 @@ const page_per = document.querySelector('span.page_per');
         canvas.style.width = Math.floor(viewport.width * PRINT_UNITS) + "px";
         canvas.style.height = Math.floor(viewport.height * PRINT_UNITS) + "px";
 
-        //console.log(`PRINT_UNITS:${PRINT_UNITS} width:${canvas.width} height:${canvas.height}`)
-
         await page.render(renderContext);
         const dataUrl = canvas.toDataURL('image/jpeg');
         const client_id =
@@ -81,39 +82,46 @@ const page_per = document.querySelector('span.page_per');
         return res.finalUrl;
     }
 
+    // ファイルを選択時、PDF読み込み開始
     file.addEventListener('change', async (e) => {
-        console.info(e.srcElement.files[0]);
+        filespan.textContent = '初期化';
+        page_per.textContent = '初期化';
+        progress_log.textContent = '[]';
+        error_log.textContent = '';
+
         PDFJS.cMapUrl = './cmaps/';
         PDFJS.cMapPacked = true;
         const file = e.srcElement.files[0];
-
-        filespan.textContent = '初期化';
-        page_per.textContent = '初期化';
-
-        console.info(file);
-        filespan.textContent = file.name;
-
         const obj = await read(file);
         const pdf = await PDFJS.getDocument(obj);
 
-        console.info(pdf.numPages);
+        filespan.textContent = file.name;
+        console.info(`${file.name}: ${pdf.numPages} pages`);
 
         let pages = [];
-
         let page = 1;
         while(true){
+            progress_log.textContent = `[${'|'.repeat(page)}${'-'.repeat(pdf.numPages - page)}]`;
             const i = await pdf.getPage(page);
 
             let gyazo;
 
+            // とりあえずエラーになっても3回試してみる
             for (let retry = 1; retry <= 3; retry++) {
                 try {
                     gyazo = await renderAndUpload(i, file.name);
                 } catch (error) {
-                    console.info(`error and ${retry} retry: ${error}`);
+                    console.error(`error and ${retry} retry: ${error}`);
+                    error_log.textContent += `error and ${retry} retry: ${error}\r\n`;
                 }
                 if (gyazo) {
-                    break;
+                    // エラーにならずにGyazoのURLは帰ってきたが、レスポンスが想定したURLと違う場合、もう一回チャレンジしてみる
+                    if (gyazo.includes('/api/upload/')) {
+                        console.error(`${gyazo}`);
+                        error_log.textContent += `${gyazo}\r\n`;
+                    } else {
+                        break;
+                    }
                 }
             }
 
