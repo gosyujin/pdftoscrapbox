@@ -1,30 +1,17 @@
 // ==UserScript==
 // @name         PDF to Scrapbox user.js
 // @namespace    http://tampermonkey.net/
-// @version      11.0.0
-// @description  /api/upload/を補足するように処理追加
+// @version      20.0.0
+// @description  アップロードAPIをeasy_authからuploadに変更
 // @author       You
 // @match        https://note.gosyujin.com/pdftoscrapbox/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
 // ==/UserScript==
 
-const GM_get = (url)=>{
-    return new Promise((r)=>{
-        const method = "GET";
-        const onload = (res)=> r(res);
-        GM_xmlhttpRequest({ method, url, onload,withCredentials: true });
-    });
-}
-
-const GM_save = (title, text) => {
-    //const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-    const blob = new Blob([ text.join('\n') ], { "type" : "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const args = { url: url, name: `${title}.txt`, saveAs: false };
-
-    GM_download(args);
-}
+const GYAZO_ACCESS_TOKEN = 'YOUR_TOKEN';
+const GYAZO_UPLOAD_ENDPOINT = 'https://upload.gyazo.com/api/upload';
+const MAX_RETRY = 3;
 
 // index.htmlの要素
 const file = document.querySelector('#getfile');
@@ -34,113 +21,157 @@ const progress_log = document.querySelector('span.progress_log');
 const error_log = document.querySelector('pre.error_log');
 const preview = document.querySelector('span.preview');
 
-(function() {
-    const read = (file) => {
-        return new Promise((r)=>{
-            const reader = new FileReader();
-            reader.onload = (e)=>{
-                r(e.target.result);
-            };
-            reader.readAsArrayBuffer(file)
-        });
-    }
+const debug = (d = {console: null, filespan: null, page_per: null, progress_log: null, error_log: null, preview: null}) => {
+    if (d.console) console.log(d.console);
+    if (d.filespan) filespan.textContent = d.filespan;
+    if (d.page_per) page_per.textContent = d.page_per;
+    if (d.progress_log) progress_log.textContent = d.progress_log;
+    if (d.error_log) error_log.textContent += `${d.error_log}\r\n`;
+}
 
+const GM_post = (blob, referer, title) => {
+    const data = new FormData();
+    data.append('access_token', GYAZO_ACCESS_TOKEN);
+    data.append('imagedata', blob, 'imagedata.jpg');
+    data.append('access_policy', 'anyone'); // 'anyone' or 'only_me'
+    data.append('metadata_is_public', false);
+    data.append('referer_url', referer);
+    data.append('app', 'pdf_to_scrapbox');
+    data.append('title', title);
+
+    return new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+            method: 'POST',
+            url: GYAZO_UPLOAD_ENDPOINT,
+            data: data,
+            onload(res) {
+                resolve(res);
+            },
+            withCredentials: true
+        });
+    });
+}
+
+const GM_save = (title, text) => {
+    //const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([ text.join('\n') ], { "type" : "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const args = { url: url, name: `${title}.txt`, saveAs: false };
+    GM_download(args);
+}
+
+const readPdf = (file) => {
+    return new Promise((r) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            r(e.target.result);
+        };
+        reader.readAsArrayBuffer(file)
+    });
+}
+
+const canvasToBlob = (dataUrl) => {
+    // Base64データをバイナリデータに変換する
+    const byteString = atob(dataUrl.split(',')[1]);
+    // MIMEタイプを取得する
+    const mimeType = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+    // バイナリデータを格納する配列を作成する
+    const arrayBuffer = new ArrayBuffer(byteString.length);
+    const uint8Array = new Uint8Array(arrayBuffer);
+    // バイナリデータを配列に格納する
+    for (let i = 0; i < byteString.length; i++) {
+        uint8Array[i] = byteString.charCodeAt(i);
+    }
+    // Blobオブジェクトを作成する
+    const blob = new Blob([arrayBuffer], { type: mimeType });
+    return blob;
+}
+
+(function() {
     // レンダリング後、Gyazoにアップロード
-    const renderAndUpload = async (page, name)=>{
+    const renderAndUpload = async (page, name) => {
         // see: https://www.linkcom.com/blog/2020/05/pdfjs-resolution.html
         const PRINT_UNITS = 600 / 72.0;
-
+        const MAXIMUM_CANVAS_SIZE = 32767;
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         const transform = [PRINT_UNITS, 0, 0, PRINT_UNITS, 0, 0];
-        const viewport = page.getViewport(1.5);
+        let viewport = page.getViewport(1.5);
+        //FIXME デカすぎる画像のscaleを小さくする方法もうちょっと上手く書ける
+        if (viewport.width * PRINT_UNITS > MAXIMUM_CANVAS_SIZE || viewport.height * PRINT_UNITS > MAXIMUM_CANVAS_SIZE) {
+            viewport = page.getViewport(0.8);
+        }
         const renderContext = {
             canvasContext: context,
             transform: transform,
             viewport: viewport
         };
-
         canvas.width = Math.floor(viewport.width * PRINT_UNITS);
         canvas.height = Math.floor(viewport.height * PRINT_UNITS);
         canvas.style.width = Math.floor(viewport.width * PRINT_UNITS) + "px";
         canvas.style.height = Math.floor(viewport.height * PRINT_UNITS) + "px";
-
         await page.render(renderContext);
-        const dataUrl = canvas.toDataURL('image/jpeg');
-        const client_id =
-              'a126a3564372324ac926fadea9b4c724f2734dbd734460233a0539b9a84c6ed3';
 
-        const formData = new FormData();
-        formData.append('image_url', dataUrl);
-        formData.append('client_id', client_id);
-        formData.append('referer_url', location.href);
-        formData.append('title', name);
-
-        const response = await fetch('https://upload.gyazo.com/api/upload/easy_auth', { method: 'POST', body: formData });
-        const data = await response.json();
-        const res = await GM_get(data.get_image_url);
-        return res.finalUrl;
+        const blob = await canvasToBlob(canvas.toDataURL('image/jpeg'));
+        const response = await GM_post(blob, location.href, name);
+        const data = await response.response;
+        return JSON.parse(data).permalink_url;
     }
 
     // ファイルを選択時、PDF読み込み開始
     file.addEventListener('change', async (e) => {
-        filespan.textContent = '初期化';
-        page_per.textContent = '初期化';
-        progress_log.textContent = '[]';
-        error_log.textContent = '';
-
         PDFJS.cMapUrl = './cmaps/';
         PDFJS.cMapPacked = true;
         const file = e.srcElement.files[0];
-        const obj = await read(file);
+        const obj = await readPdf(file);
         const pdf = await PDFJS.getDocument(obj);
+        let gyazoUrlList = [];
+        let currentPageIndex = 1;
+        debug({filespan: '初期化', page_per: '初期化', progress_log: '[]', error_log: ''});
+        debug({console: `${file.name}: ${pdf.numPages}pages`, filespan: file.name, page_per: `${currentPageIndex} / ${pdf.numPages} (${new Date().toLocaleString()})`, progress_log: `[${'|'.repeat(currentPageIndex)}${'-'.repeat(pdf.numPages - currentPageIndex)}]`});
 
-        filespan.textContent = file.name;
-        console.info(`${file.name}: ${pdf.numPages} pages`);
-
-        let pages = [];
-        let page = 1;
-        while(true){
-            progress_log.textContent = `[${'|'.repeat(page)}${'-'.repeat(pdf.numPages - page)}]`;
-            const i = await pdf.getPage(page);
-
+        while(true) {
+            const page = await pdf.getPage(currentPageIndex);
             let gyazo;
 
-            // とりあえずエラーになっても3回試してみる
-            for (let retry = 1; retry <= 3; retry++) {
+            for (let retry = 1; retry <= MAX_RETRY; retry++) {
                 try {
-                    gyazo = await renderAndUpload(i, file.name);
+                    gyazo = await renderAndUpload(page, file.name);
                 } catch (error) {
-                    console.error(`error and ${retry} retry: ${error}`);
-                    error_log.textContent += `error and ${retry} retry: ${error}\r\n`;
+                    debug({console: `error and ${retry} retry: ${error}`, error_log: `error and ${retry} retry: ${error}`});
                 }
-                if (gyazo) {
-                    // エラーにならずにGyazoのURLは帰ってきたが、レスポンスが想定したURLと違う場合、もう一回チャレンジしてみる
-                    if (gyazo.includes('/api/upload/')) {
-                        console.error(`${gyazo}`);
-                        error_log.textContent += `${gyazo}\r\n`;
-                    } else {
-                        break;
-                    }
+                if (gyazo && gyazo.includes('/api/upload/')) {
+                    // GyazoのURLは返ってきたが、レスポンスが想定したURLと違う場合ループを継続してみる(なぜか/api/upload/という文字列が入ってくる時がある)
+                    debug({console: `なんか変: ${gyazo}`, error_log: `なんか変: ${gyazo}`});
+                } else {
+                    // GyazoっぽいURLが返ってきたらループ終了を待たずに脱出
+                    break;
                 }
+            }
+            if (!gyazo) return;
+
+            if(gyazoUrlList.includes(gyazo)){
+                // 同じ画像が既にgyazoUrlListにpushされている場合、そのページは飛ばす
+                debug({console: `push skip includes: ${gyazo}`, error_log: `push skip includes: ${gyazo}`});
+            } else {
+                gyazoUrlList.push(gyazo);
             }
 
-            console.info(`${('0000'+page).slice(-4)}: ${gyazo}`);
-            if(pages.includes(gyazo)){
-                console.info(`push skip includes: ${gyazo}`);
-            } else {
-                pages.push(gyazo);
-            }
-            if(page == pdf.numPages) break;
-            page ++;
-            page_per.textContent = `${page} / ${pdf.numPages}`;
+            debug({console: `${('0000'+currentPageIndex).slice(-4)}: ${gyazo}`, page_per: `${currentPageIndex} / ${pdf.numPages} (${new Date().toLocaleString()})`, progress_log: `[${'|'.repeat(currentPageIndex)}${'-'.repeat(pdf.numPages - currentPageIndex)}]`});
+            if(currentPageIndex == pdf.numPages) break;
+            currentPageIndex++;
         }
-        const urls = pages.map(url => `[[${url}]]`);
+
+        if (gyazoUrlList.length === 0) return;
+
+        // すべてのGyazo URLを[[]]で装飾(Scrapboxページへのwindow.open用)
+        const urls = gyazoUrlList.map(url => `[[${url}]]`);
+        // 1行目=タイトルをファイル名にしている
         urls.unshift(file.name.normalize());
         window.open(`https://scrapbox.io/${document.querySelector('input').value}/new?body=${encodeURIComponent(urls.join("\n"))}`);
 
-        const plainUrls = pages.map(url => `${url}`);
+        //　Gyazo URL一覧のファイルダウンロード用
+        const plainUrls = gyazoUrlList.map(url => `${url}`);
         GM_save(file.name.normalize(), plainUrls);
-        console.info(`${file.name.normalize()} done.`);
     });
 })();
