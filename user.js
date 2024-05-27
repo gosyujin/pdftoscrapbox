@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PDF to Scrapbox user.js
 // @namespace    http://tampermonkey.net/
-// @version      30.0.0
-// @description  pdf.js 4.2.67
+// @version      30.0.1
+// @description  pdf.js 4.2.67 with cmap
 // @author       You
 // @match        https://note.gosyujin.com/pdftoscrapbox/*
 // @grant        GM_xmlhttpRequest
@@ -97,7 +97,7 @@ const canvasToBlob = (dataUrl) => {
         debug({filespan: '初期化', page_per: '初期化', progress_log: '[]', show_log: ''});
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.mjs';
-        const pdfDoc = await pdfjsLib.getDocument(obj).promise;
+        const pdfDoc = await pdfjsLib.getDocument({url: obj, cMapUrl: "./cmaps/"}).promise;
         const pagePromises = [];
 
         for (let currentPageIndex = 1; currentPageIndex <= pdfDoc.numPages; currentPageIndex++) {
